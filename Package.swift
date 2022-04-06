@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
     
-    name      : "SensorRecordingUtils",
+    name      : "sensor_recording_utils",
     platforms : [ .iOS("15.2") ],
     products  :
         [
