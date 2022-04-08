@@ -51,27 +51,25 @@ public struct Participant_entry_view<Label, Destination>: View where
                 interface_orientation = orientation
             }
             
-            model.register_for_system_events()
+            on_view_appear()
             
         }
         .onDisappear()
         {
-            
-            model.cancel_system_event_subscriptions()
-            
+            on_view_disappear()
         }
         .onChange(of: scene_phase)
         {
             
             phase in
-            
+                            
             switch phase
             {
                 case .active:
-                    model.register_for_system_events()
+                    on_view_appear()
                     
                 case .inactive:
-                    model.cancel_system_event_subscriptions()
+                    on_view_disappear()
                     
                 default:
                     break
@@ -135,6 +133,8 @@ public struct Participant_entry_view<Label, Destination>: View where
         self._interface_orientation = interface_orientation
         self.recording_view         = recording_view
         self.action_buttons         = action_buttons
+        
+        self.is_participant_id_focused = false
 
     }
     
@@ -150,17 +150,30 @@ public struct Participant_entry_view<Label, Destination>: View where
             
             Text("Participant ID:")
             
-            TextField("Enter unique ID", text: $model.participant_id)
+            TextField(
+                    "Enter unique ID",
+                    text    : $model.participant_id,
+                    onCommit: participant_id_changed
+                )
+                .focused($is_participant_id_focused)
                 .frame(maxWidth: 250.0)
                 .disableAutocorrection(true)
                 .keyboardType(.alphabet)
                 .lineLimit(1)
                 .textInputAutocapitalization(.characters)
-                .textContentType(.username)
+                .textContentType(.name)
                 .textFieldStyle(.roundedBorder)
-                .onSubmit
+                .onSubmit( participant_id_changed )
+                .toolbar
                 {
-                    model.format_participant_id()
+                    ToolbarItem(placement: .keyboard)
+                    {
+                        HStack
+                        {
+                            Spacer()
+                            Button("Done", action: participant_id_changed )
+                        }
+                    }
                 }
             
         }
@@ -313,6 +326,7 @@ public struct Participant_entry_view<Label, Destination>: View where
     
     @ViewBuilder private var action_buttons : () -> Label
     
+    @FocusState private var is_participant_id_focused: Bool
     
     @State private var launch_recording_screen : Bool = false
     
@@ -326,6 +340,30 @@ public struct Participant_entry_view<Label, Destination>: View where
     
     // MARK: - Actions
 
+    
+    private func participant_id_changed()
+    {
+        
+        model.format_participant_id()
+        is_participant_id_focused = false
+        
+    }
+    
+    
+    private func on_view_appear()
+    {
+        
+        is_participant_id_focused = false
+        model.register_for_system_events()
+        
+    }
+    
+    
+    private func on_view_disappear()
+    {
+        is_participant_id_focused = false
+        model.cancel_system_event_subscriptions()
+    }
     
     /**
      * Open iOS camera settings app
@@ -447,6 +485,31 @@ public struct Participant_entry_view<Label, Destination>: View where
         }
         
         return message
+        
+    }
+    
+}
+
+
+
+public extension Participant_entry_view where Label == EmptyView
+{
+    
+    init(
+            title   : String = "Enter participant information",
+            model   : Participant_entry_model,
+            interface_orientation       : Binding<UIDeviceOrientation>,
+            @ViewBuilder recording_view : @escaping () -> Destination
+        )
+    {
+        
+        self.init(
+            title: title,
+            model: model,
+            interface_orientation: interface_orientation,
+            recording_view: recording_view,
+            action_buttons: { EmptyView() }
+        )
         
     }
     
