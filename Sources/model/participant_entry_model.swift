@@ -30,8 +30,6 @@ open class Participant_entry_model: ObservableObject
     @Published public final var system_message          : String? = nil
     
     
-    public final var setup_error       : Setup_error?   = nil
-    
     public final let system_identifier : Device.ID_type = "Phone"
     
     
@@ -125,28 +123,22 @@ open class Participant_entry_model: ObservableObject
      * Verify all the information required is valid before start recoding
      * data
      */
-    open func is_configuration_valid() async -> Bool
+    open func is_configuration_valid() async -> Result<Void, Setup_error>
     {
-        
-//        print( "Participant_entry_model : is_configuration_valid")
-        
-        // Check system state
 
         if is_temperature_state_high()
         {
-            setup_error = .system_thermal_state(
+            return .failure(.system_thermal_state(
                     maximum: settings.maximum_thermal_state
-                )
-            return false
+                ))
         }
 
 
         if is_battery_level_low()
         {
-            setup_error = .system_battery_level(
+            return .failure(.system_battery_level(
                     minimum: settings.minimum_battery_percentage
-                )
-            return false
+                ))
         }
 
 
@@ -154,16 +146,15 @@ open class Participant_entry_model: ObservableObject
 
 
         format_participant_id()
+        
         if is_participant_id_empty()
         {
-            setup_error = .no_participant_id
-            return false
+            return .failure(.no_participant_id)
         }
-        
         
         save_last_particpant_id()
         
-        return true
+        return .success( () )
         
     }
     

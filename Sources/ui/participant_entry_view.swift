@@ -54,7 +54,7 @@ public struct Participant_entry_view<Label, Destination>: View where
             on_view_appear()
             
         }
-        .onDisappear()
+        .onDisappear
         {
             on_view_disappear()
         }
@@ -87,7 +87,7 @@ public struct Participant_entry_view<Label, Destination>: View where
         }
         .alert("Error",
             isPresented : $show_setup_alert,
-            presenting  : model.setup_error)
+            presenting  : setup_error)
             {
                 error_type in
 
@@ -330,6 +330,8 @@ public struct Participant_entry_view<Label, Destination>: View where
     
     @State private var launch_recording_screen : Bool = false
     
+    @State private var setup_error : Setup_error?   = nil
+    
     @State private var show_setup_alert : Bool = false
         
     @Environment(\.scenePhase) private var scene_phase
@@ -373,7 +375,7 @@ public struct Participant_entry_view<Label, Destination>: View where
         
         if let url = URL(string: UIApplication.openSettingsURLString)
         {
-            model.cancel_system_event_subscriptions()
+            //model.cancel_system_event_subscriptions()
             UIApplication.shared.open(url)
         }
         
@@ -388,14 +390,16 @@ public struct Participant_entry_view<Label, Destination>: View where
 
         Task
         {
-            if await model.is_configuration_valid()
+            let result = await model.is_configuration_valid()
+            
+            switch result
             {
-                model.cancel_system_event_subscriptions()
-                launch_recording_screen = true
-            }
-            else
-            {
-                show_setup_alert = true
+                case .success():
+                    launch_recording_screen = true
+                    
+                case .failure(let error):
+                    setup_error = error
+                    show_setup_alert = true
             }
         }
         

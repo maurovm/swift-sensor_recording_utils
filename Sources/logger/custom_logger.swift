@@ -26,9 +26,12 @@ public final class Custom_logger
     /**
      * Default class initialiser
      */
-    public init()
+    public init( logging_enabled : Bool )
     {
+        
+        self.logging_enabled = logging_enabled
         logger = Logger(subsystem: "", category: "")
+        
     }
     
     
@@ -36,9 +39,16 @@ public final class Custom_logger
      * Creates a custom logger for logging to a specific subsystem and
      * category.
      */
-    public init(sub_system: String, category: String = "")
+    public init(
+            logging_enabled : Bool,
+            sub_system      : String,
+            category        : String = ""
+        )
     {
-        if SensorRecordingUtils.LOGGING_ENABLED
+        
+        self.logging_enabled = logging_enabled
+        
+        if logging_enabled
         {
             logger = Logger(subsystem: sub_system, category : category)
         }
@@ -46,6 +56,7 @@ public final class Custom_logger
         {
             logger = nil
         }
+        
     }
     
     
@@ -85,6 +96,9 @@ public final class Custom_logger
     // MARK: - Private state
     
     
+    let logging_enabled : Bool
+    
     private let logger: Logger?
+    
     
 }

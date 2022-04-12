@@ -22,15 +22,17 @@ public extension Device
     enum Disconnect_error : Error, Equatable
     {
         
+        case disconnect_in_progress
+        
         case failed_to_disconnect(
                 device_id   : String,
                 description : String
             )
         
-        case device_disconnected(
-                device_id   : String,
-                description : String
-            )
+//        case device_disconnected(
+//                device_id   : String,
+//                description : String
+//            )
         
         case failure(
                 device_id   : String,

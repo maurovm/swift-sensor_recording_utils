@@ -49,6 +49,9 @@ open class Device_manager: ObservableObject, Identifiable, Equatable
     }
     
     
+    public let sensor_type : Sensor_type
+    
+    
     @Published public var manager_event : Device_manager_event
     
     /**
@@ -74,6 +77,7 @@ open class Device_manager: ObservableObject, Identifiable, Equatable
      */
     public init(
             identifier   : Device.ID_type,
+            sensor_type  : Sensor_type,
             settings     : Device_settings,
             orientation  : UIDeviceOrientation,
             preview_mode : Device.Content_mode,
@@ -91,16 +95,14 @@ open class Device_manager: ObservableObject, Identifiable, Equatable
         device_id = device_id.replacingOccurrences(of: " ", with: "_")
         
         self.identifier            = device_id
+        self.sensor_type           = sensor_type
         self.device_settings       = settings
         self.interface_orientation = orientation
         self.preview_mode          = preview_mode
         self.device_state          = device_state
         self.connection_timeout    = connection_timeout
         
-        manager_event = .recording_state_update(
-                device_id : identifier,
-                state     : .disconnected
-            )
+        manager_event = .not_set
         
     }
     
@@ -115,7 +117,6 @@ open class Device_manager: ObservableObject, Identifiable, Equatable
         start_timeout_task = nil
         
     }
-    
     
     
     // MARK: - Public interface to Start/Stop recording from this device
@@ -172,7 +173,7 @@ open class Device_manager: ObservableObject, Identifiable, Equatable
         {
             do
             {
-            try create_output_data_folder(recording_folder)
+                try create_output_data_folder(recording_folder)
             }
             catch
             {
@@ -188,8 +189,10 @@ open class Device_manager: ObservableObject, Identifiable, Equatable
                 
         do
         {
+            
             try await device_connect(recording_path: recording_folder)
             set_device_connected()
+            
         }
         catch let error as Device.Connect_error
         {
@@ -233,7 +236,7 @@ open class Device_manager: ObservableObject, Identifiable, Equatable
         
         if  is_device_connected == false
         {
-            throw Device.Recording_error.not_connected(
+            throw Device.Start_recording_error.not_connected(
                     device_id : identifier
                 )
         }
@@ -260,10 +263,12 @@ open class Device_manager: ObservableObject, Identifiable, Equatable
         
         do
         {
+            
             try await device_start_recording()
             is_device_recording = true
+            
         }
-        catch let error as Device.Recording_error
+        catch let error as Device.Start_recording_error
         {
             start_timeout_task?.cancel()
             start_timeout_task = nil
@@ -275,7 +280,7 @@ open class Device_manager: ObservableObject, Identifiable, Equatable
             start_timeout_task?.cancel()
             start_timeout_task = nil
             
-            throw Device.Recording_error.failed_to_start(
+            throw Device.Start_recording_error.failed_to_start(
                     device_id    : identifier,
                     description  : error.localizedDescription
                 )
@@ -299,16 +304,18 @@ open class Device_manager: ObservableObject, Identifiable, Equatable
         
         do
         {
+            
             try await device_stop_recording()
             is_device_recording = false
+            
         }
-        catch let error as Device.Recording_error
+        catch let error as Device.Stop_recording_error
         {
             throw error
         }
         catch
         {
-            throw Device.Recording_error.failed_to_stop(
+            throw Device.Stop_recording_error.failed_to_stop(
                     device_id    : identifier,
                     description  : error.localizedDescription
                 )
@@ -327,9 +334,11 @@ open class Device_manager: ObservableObject, Identifiable, Equatable
         
         do
         {
+            
             try await device_disconnect()
             is_device_connected = false
             device_state = .disconnected
+            
         }
         catch let error as Device.Disconnect_error
         {
@@ -487,6 +496,7 @@ open class Device_manager: ObservableObject, Identifiable, Equatable
      */
     private func create_output_data_folder(_ output_folder: URL) throws
     {
+        
         do
         {
             try FileManager.default.createDirectory(
@@ -511,6 +521,7 @@ open class Device_manager: ObservableObject, Identifiable, Equatable
                     description  : error.localizedDescription
                 )
         }
+        
     }
     
     

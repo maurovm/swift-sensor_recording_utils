@@ -23,6 +23,8 @@ import Foundation
 public enum Device_manager_event
 {
     
+    case not_set
+    
     case recording_state_update(
                 device_id : Device.ID_type,
                 state     : Device.Recording_state

@@ -26,12 +26,12 @@ open class Recording_session_model : ObservableObject
     /**
      * Handle changes to the interface orientation
      */
-    @Published public private(set) var interface_orientation : UIDeviceOrientation
+    @Published final public private(set) var interface_orientation : UIDeviceOrientation
     
     /**
      * Handle changes to the scale to preview content
      */
-    @Published public private(set) var preview_mode : Device.Content_mode
+    @Published final public private(set) var preview_mode : Device.Content_mode
     
     
     /**
@@ -47,51 +47,64 @@ open class Recording_session_model : ObservableObject
     
     
     /**
+     * The list of devices configured for the recording session
+     */
+    @Published final public private(set) var all_device_managers =
+        Dictionary<Device.ID_type, Device_manager>()
+    
+    /**
      * The list of cameras configured for the recording session
      */
-    @Published public private(set) var all_cameras : [Device_manager] = []
+    final public var all_video_cameras : [Device_manager]
+    {
+        all_device_managers.values.filter
+        {
+            $0.sensor_type == .video_camera
+        }
+    }
     
     /**
      * The list of vital sign sensors configured for the recording session
      */
-    @Published public private(set) var all_sensors : [Device_manager] = []
+    final public var all_pulse_oximeters : [Device_manager]
+    {
+        all_device_managers.values.filter
+        {
+            $0.sensor_type == .pulse_oximeter
+        }
+    }
     
     
-    /**
-     * Are we currently recording from all devices?
-     */
-    @Published private(set) var is_recording = false
-    
-    /**
-     * Has either the start or stop recording process been requested
-     */
-    @Published private(set) var is_session_in_progress = false
-    
-    /**
-     * Flag that indicates the recording finished successfully, and now
-     * we need to transition to the Summary View
-     */
-    @Published var recording_finished_successfully : Bool = false
+    private(set) var recording_state : Device.Recording_state
     
     
     /**
      * An error occurred in the recording process
      */
-    @Published var show_alert_error = false
-    private(set) var alert_error : Error?
+    @Published var show_recording_alert = false
+    
+    private(set) var recording_error : Error? = nil
+    
+    @Published var recording_finished_successfully = false
+    
+    
+    /**
+     * An error occurred in the recording process
+     */
+    @Published var show_device_manager_alert = false
+    private(set) var device_manager_error: Error? = nil
     
     
     
     public init(
             participant_id            : String ,
-            interface_orientation     : UIDeviceOrientation = .portrait,
-            preview_mode              : Device.Content_mode = .scale_to_fill,
-            recording_elapsed_time    : TimeInterval        = 0,
-            is_recording              : Bool                = false,
-            is_session_in_progress    : Bool                = false,
-            system_temperature_state  : Temperature_state?  = nil,
-            system_battery_percentage : Battery_percentage? = nil,
-            system_battery_state      : Battery_state?      = nil
+            interface_orientation     : UIDeviceOrientation    = .portrait,
+            preview_mode              : Device.Content_mode    = .scale_to_fill,
+            recording_elapsed_time    : TimeInterval           = 0,
+            recording_state           : Device.Recording_state = .disconnected,
+            system_temperature_state  : Temperature_state?     = nil,
+            system_battery_percentage : Battery_percentage?    = nil,
+            system_battery_state      : Battery_state?         = nil
         )
     {
         
@@ -99,8 +112,10 @@ open class Recording_session_model : ObservableObject
         self.interface_orientation  = interface_orientation
         self.preview_mode           = preview_mode
         self.recording_elapsed_time = recording_elapsed_time
-        self.is_recording           = is_recording
-        self.is_session_in_progress = is_session_in_progress
+        self.recording_state        = recording_state
+        
+        
+        self.recording_state = .disconnected
         
         
         if let temperature_state = system_temperature_state
@@ -144,24 +159,7 @@ open class Recording_session_model : ObservableObject
     }
     
     
-    // MARK: - Private interface to handle adding/removing devices
-    
-    
-    
-    public final func add_camera( _ device: Device_manager )
-    {
-        
-        add_device(device)
-        all_cameras.append(device)
-        
-    }
-    
-    
-    public final func add_sensor( _ device: Device_manager )
-    {
-        add_device(device)
-        all_sensors.append(device)
-    }
+    // MARK: - Public interface to handle adding/removing devices
     
     
     /**
@@ -170,15 +168,14 @@ open class Recording_session_model : ObservableObject
      * Check if the device was not previously attached.
      * Chain the publishers for events requested from the UI
      */
-    func add_device( _ device: Device_manager )
+    final public func add_device( _ device: Device_manager )
     {
         
         if all_device_managers.keys.contains(device.identifier)
         {
-            fatalError(
-                "Cannot add device '\(device.identifier)', it already exists"
-            )
+            return
         }
+        
         
         $interface_orientation
             .assign(to: \.interface_orientation, on: device)
@@ -202,8 +199,6 @@ open class Recording_session_model : ObservableObject
         }
         ui_changes_subscriptions.removeAll()
         
-        all_cameras.removeAll()
-        all_sensors.removeAll()
         all_device_managers.removeAll()
         
     }
@@ -274,51 +269,55 @@ open class Recording_session_model : ObservableObject
     }
     
     
-    // MARK: - Internal interface to Start/Stop the recording process
+    // MARK: - Public interface to Start/Stop the recording process
     
     
-    /**
-     * Start or stop the recording session
-     */
-    func toggle_recording_process()
+    func toggle_recording_process() async
     {
-
-        // If we already requested to stop, do nothing
         
-        if is_session_in_progress
+        do
         {
-            if is_recording == false
+            if recording_state == .disconnected
             {
-                start_recording_task?.cancel()
+                try await start_recording()
             }
-            return
+            else if (recording_state == .connecting) ||
+                    (recording_state == .streaming)
+            {
+                try await stop_recording()
+                recording_finished_successfully = true
+            }
+            else
+            {
+                // do nothing
+            }
         }
-        
-        
-        is_session_in_progress = true
-        
-        if is_recording
+        catch
         {
-            stop()
-        }
-        else
-        {
-            start()
+            recording_error = error
+            show_recording_alert = true
         }
         
     }
     
     
-    /**
-     * Clean up all resources used by this class
-     *
-     * The UI will typically call this method
-     */
-    func end_session()
+    func end_recording_session() async -> Bool
     {
+        let result : Bool
         
-        stop()
+        do
+        {
+            try await stop_recording()
+            result = true
+        }
+        catch
+        {
+            result = false
+            recording_error = error
+            show_recording_alert = true
+        }
         
+        return result
     }
     
     
@@ -333,7 +332,7 @@ open class Recording_session_model : ObservableObject
     private let system_identifier : Device.ID_type = "Phone"
     
     
-    private var start_recording_task : Task<Void, Never>? = nil
+    private var recording_task : Task<Void, Error>? = nil
     
     private var stop_recording_task  : Task<Void, Never>? = nil
     
@@ -372,14 +371,7 @@ open class Recording_session_model : ObservableObject
      */
     private var ui_changes_subscriptions = Set<AnyCancellable>()
     
-    
-    /**
-     * The list of devices configured for the recording session
-     */
-    private var all_device_managers = Dictionary<Device.ID_type, Device_manager>()
-    
     private var device_manager_event_subscriptions = Set<AnyCancellable>()
-    
     
     
     // MARK: - Private utility methods to handle system state changes
@@ -492,95 +484,85 @@ open class Recording_session_model : ObservableObject
     // MARK: - Private interface to START the recording process
     
     
-    /**
-     * Start the recording process for all the configured devices
-     */
-    private func start()
+    private func start_recording() async throws
     {
-            
-        if is_recording
+        
+        if recording_state != .disconnected
         {
             return
         }
         
         
-        // Clean up previous tasks and devices if they exist
-        
-        
-        start_recording_task?.cancel()
-        start_recording_task = nil
-        
-        stop_recording_task?.cancel()
-        stop_recording_task = nil
-        
-        remove_all_configured_devices()
-        
-        
-        // Load the configured devices
-        
-        
-        update_system_battery_percentage()
-        add_all_configured_devices()
-        
-        
-        // Start the recording process
-        
-        
         UIApplication.shared.isIdleTimerDisabled = true
+        recording_state = .connecting
         
-        start_recording_task = Task
+        
+        recording_task = Task
         {
             [weak self] in
-               
-            let recording_status = await self?.start_data_recording()
             
-            self?.is_session_in_progress = false
+            guard let self = self
+                else
+                {
+                    throw Device.Connect_error.task_cancelled
+                }
             
-            if let status = recording_status ,
-               (status == true)
+            self.add_all_configured_devices()
+            
+            if self.all_device_managers.isEmpty
             {
-                self?.is_recording = true
+                throw Device.Connect_error.no_devices_configured
             }
-            else
-            {
-                self?.show_alert_error = true
-            }
+            
+            self.subscribe_to_device_manager_events()
+            
+            try await self.connect_to_all_device_managers()
+            
+            //do{ try await Task.sleep(seconds: 5) } catch {}
+            
+            try await self.start_recording_from_all_device_managers()
         }
         
-    }
-    
-    
-    // TODO: parallelise this Task
-    private func start_data_recording() async -> Bool
-    {
-        
-        if all_device_managers.values.count < 1
-        {
-            alert_error = Device.Connect_error.no_devices_configured
-            return false
-        }
-        
-        let is_recording_started : Bool
         
         do
         {
-            subscribe_to_device_manager_events()
             
-            try await connect_to_all_device_managers()
-            try await start_recording_from_all_device_managers()
+            defer
+            {
+                recording_task = nil
+            }
             
-            start_recording_timer()
-            is_recording_started = true
+            guard let local_task = recording_task
+                else
+                {
+                    throw Device.Connect_error.task_cancelled
+                }
+            
+            let result = await local_task.result
+            
+            if local_task.isCancelled == false
+            {
+                try result.get()
+                
+                start_recording_timer()
+                recording_state = .streaming
+            }
+            
         }
         catch
         {
-            is_recording_started = false
-            _ = await stop_data_recording()
-            alert_error = error
+            
+            do
+            {
+                try await stop_recording()
+            }
+            catch
+            {
+            }
+            
+            throw error
         }
-                
-        return is_recording_started
-
+        
     }
     
     
@@ -684,13 +666,13 @@ open class Recording_session_model : ObservableObject
                     {
                         is_started = try await device_manager.start_recording()
                     }
-                    catch let error as Device.Recording_error
+                    catch let error as Device.Start_recording_error
                     {
                         throw error
                     }
                     catch
                     {
-                        throw  Device.Recording_error.failed_to_start(
+                        throw  Device.Start_recording_error.failed_to_start(
                                 device_id   : device_id,
                                 description : "Unhandled error while " +
                                               "starting to record from " +
@@ -720,7 +702,7 @@ open class Recording_session_model : ObservableObject
         
         if (number_of_started_managers != all_device_managers.values.count)
         {
-            throw Device.Recording_error.failed_to_start_from_all_devices
+            throw Device.Start_recording_error.failed_to_start_from_all_devices
         }
         
     }
@@ -732,90 +714,40 @@ open class Recording_session_model : ObservableObject
     /**
      * Stop the recording process for all the configured devices
      */
-    private func stop(
-            there_was_a_previous_error : Bool = false
-        )
+    private func stop_recording() async throws
     {
         
-        if is_recording == false
+        if recording_state == .disconnected
         {
-            start_recording_task?.cancel()
             return
         }
         
-        
-        // Clean up previous stop task if it exists
-        
-        
-        stop_recording_task?.cancel()
-        stop_recording_task = nil
+        recording_state = .stopping
         
         
-        // Stop the recording process
-                
-        
-        UIApplication.shared.isIdleTimerDisabled = false
-        
-        stop_recording_task = Task
+        if let local_task = recording_task
         {
-            [weak self] in
-                            
-            let is_recording_stopped = await self?.stop_data_recording()
-            
-            // Clean up tasks
-            
-            
-            self?.stop_recording_task?.cancel()
-            self?.stop_recording_task = nil
-            
-            self?.start_recording_task?.cancel()
-            self?.start_recording_task = nil
-            
-            // Finish recording process
-            
-            self?.is_recording  = false
-            self?.is_session_in_progress = false
-            
-            // If there was a previous error, do nothing
-            
-            if let is_stopped = is_recording_stopped ,
-               (there_was_a_previous_error == false)
-            {
-                
-                if is_stopped
-                {
-                    self?.recording_finished_successfully = true
-                }
-                else
-                {
-                    self?.show_alert_error = true
-                }
-                
-            }
-            
+            local_task.cancel()
+            let _ = await local_task.result
         }
         
-    }
-    
-    
-    /**
-     * Main asynchronous function to stop recording
-     *
-     * - Parameter  start_recording_result:  Flag to indicate if the
-     *              the recording process started successfully.
-     */
-    private func stop_data_recording() async -> Bool
-    {
+        let stop_result = await stop_recording_from_all_devices()
         
-        let is_recording_stopped      = await stop_recording_from_all_devices()
-        let are_managers_disconnected = await discconnect_from_all_devices()
+        recording_state = .disconnecting
+        
+        let disconnect_result = await discconnect_from_all_devices()
         
         unsubscribe_to_device_manager_events()
         stop_recording_timer()
         cancel_system_event_subscriptions()
         remove_all_configured_devices()
         
-        return (is_recording_stopped && are_managers_disconnected)
+        UIApplication.shared.isIdleTimerDisabled = false
+        
+        try stop_result.get()
+        try disconnect_result.get()
+        
+        recording_state = .disconnected
         
     }
     
@@ -824,15 +756,13 @@ open class Recording_session_model : ObservableObject
      *
      * We stop recording from all device managers one by one, not in parallel
      *
-     * Returns: True unless there was an error stopping the recording from
-     *          any device.
-     *
-     *          The last error will be stored in the property `alert_error`
+     * Returns: .success unless there was an error stopping the recording from
+     *          any device
      */
-    private func stop_recording_from_all_devices() async -> Bool
+    private func stop_recording_from_all_devices() async -> Result<Void, Error>
     {
         
-        var is_recording_stopped = true
+        var result : Result<Void, Error> = .success( () )
         
         for device_manager in all_device_managers.values
         {
@@ -840,24 +770,23 @@ open class Recording_session_model : ObservableObject
             {
                 try await device_manager.stop_recording()
             }
-            catch let error as Device.Recording_error
+            catch let error as Device.Stop_recording_error
             {
-                alert_error = error
-                is_recording_stopped  = false
+                result = .failure(error)
             }
             catch
             {
-                alert_error = Device.Recording_error.failed_to_stop(
+                let new_error = Device.Stop_recording_error.failed_to_stop(
                         device_id   : device_manager.identifier,
                         description : "Unhandled error while " +
                                       "stop recording from " +
                                       "device : " + error.localizedDescription
                     )
-                is_recording_stopped = false
+                result = .failure(new_error)
             }
         }
         
-        return is_recording_stopped
+        return result
         
     }
     
@@ -870,10 +799,10 @@ open class Recording_session_model : ObservableObject
      *
      *          The last error will be stored in the property `alert_error`
      */
-    private func discconnect_from_all_devices() async -> Bool
+    private func discconnect_from_all_devices() async -> Result<Void, Error>
     {
         
-        var are_all_manager_disconnected = true
+        var result : Result<Void, Error> = .success( () )
         
         for device_manager in all_device_managers.values
         {
@@ -883,22 +812,21 @@ open class Recording_session_model : ObservableObject
             }
             catch let error as Device.Disconnect_error
             {
-                alert_error = error
-                are_all_manager_disconnected  = false
+                result = .failure(error)
             }
             catch
             {
-                alert_error = Device.Disconnect_error.failure(
+                let new_error = Device.Disconnect_error.failure(
                         device_id   : device_manager.identifier,
                         description : "Unhandled error while " +
                                       "disconnecting from from device : " +
                                       error.localizedDescription
                     )
-                are_all_manager_disconnected = false
+                result = .failure(new_error)
             }
         }
         
-        return are_all_manager_disconnected
+        return result
         
     }
 
@@ -915,7 +843,7 @@ open class Recording_session_model : ObservableObject
                 .sink
                 {
                     [weak self] event in
-                    self?.device_manager_event(event)
+                    self?.new_event_from_device_manager(event)
                 }
                 .store(in: &device_manager_event_subscriptions)
         }
@@ -925,69 +853,62 @@ open class Recording_session_model : ObservableObject
     
     private func unsubscribe_to_device_manager_events()
     {
+        
         for subscription in device_manager_event_subscriptions
         {
             subscription.cancel()
         }
         
         device_manager_event_subscriptions.removeAll()
+        
     }
     
     
-    private func device_manager_event( _  event : Device_manager_event )
+    private func new_event_from_device_manager( _  event : Device_manager_event )
     {
         
         switch event
         {
+            case .not_set:
+                device_manager_error = nil
+                
             case .recording_state_update(_,_):
-                break
+                device_manager_error = nil
                 
             case .device_disconnected(let device_id, let error):
                 
-                stop( there_was_a_previous_error: true )
-                
-                alert_error = Device.Disconnect_error.device_disconnected(
+                device_manager_error = Device.Recording_error.device_disconnected(
                         device_id   : device_id,
                         description : "\(error ?? "no error")"
                     )
-                
-                show_alert_error = true
+                show_device_manager_alert = true
                 
             case .device_connect_timeout(let device_id):
                 
-                stop( there_was_a_previous_error: true )
-                
-                alert_error = Device.Connect_error.timeout(
+                device_manager_error = Device.Recording_error.connection_timeout(
                         device_id   : device_id,
                         description : ""
                     )
-                
-                show_alert_error = true
+                show_device_manager_alert = true
                 
             case .device_start_timeout(let device_id):
                 
-                stop( there_was_a_previous_error: true )
-                
-                alert_error = Device.Recording_error.start_timeout(
+                device_manager_error = Device.Recording_error.start_timeout(
                         device_id   : device_id,
                         description : ""
                     )
-                
-                show_alert_error = true
+                show_device_manager_alert = true
                 
             case .fatal_error(
                         let device_id,
                         let description
                     ):
                 
-                stop( there_was_a_previous_error: true )
-                
-                alert_error = Device.Recording_error.fatal_error_while_recording(
+                device_manager_error = Device.Recording_error.fatal_error_while_recording(
                         device_id   : device_id,
                         description : description
                     )
-                
-                show_alert_error = true
+                show_device_manager_alert = true
                     
         }
         

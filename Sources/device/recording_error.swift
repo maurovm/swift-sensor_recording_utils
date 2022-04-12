@@ -17,30 +17,22 @@ public extension Device
 {
 
     /**
-     * If there was any error when starting to record from a device
+     * If there was any error during the recording life of a device
      */
     enum Recording_error : Error, Equatable
     {
         
-        case failed_to_start_from_all_devices
-        
-        case not_connected(
-                device_id   : Device.ID_type
+        case device_disconnected(
+                device_id   : String,
+                description : String
             )
         
+        case connection_timeout(
+                device_id   : String,
+                description : String
+            )
         
         case start_timeout(
-                device_id   : Device.ID_type,
-                description : String
-            )
-        
-        
-        case failed_to_start(
-                device_id   : Device.ID_type,
-                description : String
-            )
-        
-        case failed_to_stop(
                 device_id   : Device.ID_type,
                 description : String
             )

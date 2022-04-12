@@ -24,6 +24,8 @@ public extension Device
         
         case no_devices_configured
         
+        case task_cancelled
+        
         case failed_to_connect_to_all_devices
         
         case not_authorised(
@@ -56,12 +58,6 @@ public extension Device
             )
         
         case failed_to_apply_configuration(
-                device_id   : String,
-                description : String
-            )
-        
-        
-        case timeout(
                 device_id   : String,
                 description : String
             )
