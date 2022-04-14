@@ -4,11 +4,16 @@ A module containing shared utility methods and classes used by the other
 modules and application to record raw data from sensors such as video cameras,
 and pulse oximeters
 
+---
 
 SensorRecordingUtils is free software: you can redistribute it or modify it
 under the terms of the GNU General Public License as published by the Free 
 Software Foundation, version 2 only. Please check the file [COPYING](COPYING) 
 for more information on the license and copyright.
+
+If you want to submit pull requests or contribute source code to this 
+repository, please read the [CONTRIBUTING.md](CONTRIBUTING.md) for
+more information about contributing guidelines.
 
 If you use this app in your projects and publish the results, please cite the 
 following manuscript:
@@ -45,4 +50,5 @@ Low Energy (BLE) protocol, such as heart rate monitors and pulse oximeters.
 - [swift-thermal_recorder](https://github.com/maurovm/swift-thermal_recorder): 
 The main application (XCode, Settings.bundle, etc) to record video from the 
 thermal cameras such as the FLIR One Pro.
-- [swift-waveform_plotter_example](https://github.com/maurovm/swift-waveform_plotter_example): Example application to plot time-series data.
+- [swift-waveform_plotter_example](https://github.com/maurovm/swift-waveform_plotter_example): 
+Example application to plot time-series data.
