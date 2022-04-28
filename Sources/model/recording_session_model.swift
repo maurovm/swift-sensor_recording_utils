@@ -301,7 +301,7 @@ open class Recording_session_model : ObservableObject
     }
     
     
-    func end_recording_session() async -> Bool
+    final public func end_recording_session() async -> Bool
     {
         let result : Bool
         
