@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     
     name      : "swift-sensor_recording_utils",
-    platforms : [ .iOS("15.2") ],
+    platforms : [ .iOS("15.4") ],
     products  :
         [
             .library(
